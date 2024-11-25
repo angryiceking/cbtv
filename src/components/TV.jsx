@@ -7,7 +7,13 @@ const TV = () => {
     const [onlineModels, setOnlineModels] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [notification, setNotification] = useState(null); // For pop-up notifications
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const showNotification = (message) => {
+        setNotification(message);
+        setTimeout(() => setNotification(null), 1000); // Remove notification after 3 seconds
+    };
 
     useEffect(() => {
         let isMounted = true; // To avoid state updates on unmounted components
@@ -20,32 +26,33 @@ const TV = () => {
                     const model = tastyModels[i];
                     try {
                         const data = await fetchData(`/biocontext/${model}`);
-                        if (data && data.room_status === 'public') {
+                        if (data && (data.room_status === 'public' || data.room_status === 'private' || data.room_status === 'hidden')) {
                             newOnlineModels.push({
                                 name: model,
-                                image: data.image_url,
                                 data: data,
+                                key: `${model}-${Date.now()}`, // Unique key to identify the iframe
                             });
+                            if (isMounted) {
+                                setOnlineModels((prevModels) => {
+                                    // Preserve existing models and only update changed ones
+                                    const updatedModels = newOnlineModels.map((newModel) => {
+                                        const existingModel = prevModels.find(
+                                            (prevModel) => prevModel.name === newModel.name
+                                        );
+                                        return existingModel || newModel;
+                                    });
+
+                                    return updatedModels;
+                                });
+                            }
+                        } else if (isMounted) {
+                            // Show notification if model is offline
+                            showNotification(`${model} is currently offline.`);
                         }
                     } catch {
                         console.error(`Error fetching status for ${model}`);
                     }
-                    await delay(1000); // Delay of 1 second
-                }
-
-                // Update the online models list
-                if (isMounted) {
-                    setOnlineModels((prevModels) => {
-                        // Add new models, replace duplicates, and remove models that are no longer online
-                        const updatedModels = newOnlineModels.filter((newModel) =>
-                            !prevModels.some((prevModel) => prevModel.name === newModel.name)
-                        );
-                        const removedModels = prevModels.filter((prevModel) =>
-                            newOnlineModels.some((newModel) => newModel.name === prevModel.name)
-                        );
-
-                        return [...updatedModels, ...removedModels];
-                    });
+                    await delay(2000); // Delay of 2 seconds
                 }
             } catch (err) {
                 if (isMounted) setError(err.message);
@@ -56,38 +63,46 @@ const TV = () => {
 
         fetchTastyModels();
 
-        // Set an interval to refresh the data every 30 minutes
         const interval = setInterval(() => {
             fetchTastyModels();
-        }, 30 * 60 * 1000); // 30 minutes in milliseconds
+        }, 10 * 60 * 1000); // Refresh every 30 minutes
 
         return () => {
-            isMounted = false; // Cleanup to prevent setting state after unmount
-            clearInterval(interval); // Clear the interval
+            isMounted = false;
+            clearInterval(interval);
         };
-    }, []); // Ensure dependency array is empty
+    }, []);
 
     return (
-        <div className="">
+        <div className="relative">
             {error && <div className="text-center text-red-500 p-4">{error}</div>}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
-                {onlineModels.map((model, index) => (
-                    <div
-                        key={index}
-                        className="rounded flex flex-col items-center"
-                    >
-                        <iframe
-                            width={480}
-                            height={360}
-                            src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0`}
-                        />
-                        <div>
-                            <h2 className="text-lg font-bold">{model.name}</h2>
+            {notification && (
+                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50">
+                    {notification}
+                </div>
+            )}
+            {onlineModels && onlineModels.length !== 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
+                    {onlineModels.map((model) => (
+                        <div
+                            key={model.key} // Use the unique key
+                            className="rounded flex flex-col items-center"
+                        >
+                            <iframe
+                                className='border border-sky-500 rounded'
+                                width={480}
+                                height={360}
+                                src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0`}
+                            />
+                            <div>
+                                <h2 className="text-lg font-bold">{model.name}</h2>
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
-            {loading && <div className="text-center p-4">Loading more models...</div>}
+                    ))}
+                </div>
+            ) : (
+                <div className="text-center p-4">Loading more models...</div>
+            )}
         </div>
     );
 };
