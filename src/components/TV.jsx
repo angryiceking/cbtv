@@ -5,6 +5,7 @@ import tastyModels from '../api/tasty_models.json';
 
 const TV = () => {
     const [onlineModels, setOnlineModels] = useState([]);
+    const [offlineLog, setOfflineLog] = useState([])
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [notification, setNotification] = useState(null); // For pop-up notifications
@@ -14,6 +15,21 @@ const TV = () => {
         setNotification(message);
         setTimeout(() => setNotification(null), 1000); // Remove notification after 3 seconds
     };
+
+    const logOfflineUser = (user) => {
+        setOfflineLog((prevLog) => {
+            const newLog = [...prevLog, { user, timestamp: new Date() }];
+            return newLog.slice(-10); // Keep the last 10 logs
+        });
+    };
+
+    useEffect(() => {
+        const logContainer = document.querySelector('.offline-log');
+        if (logContainer) {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+    }, [offlineLog]);
+    
 
     useEffect(() => {
         let isMounted = true; // To avoid state updates on unmounted components
@@ -47,6 +63,7 @@ const TV = () => {
                             }
                         } else if (isMounted) {
                             // Show notification if model is offline
+                            logOfflineUser(model);
                             showNotification(`${model} is currently offline.`);
                         }
                     } catch {
@@ -74,7 +91,7 @@ const TV = () => {
     }, []);
 
     return (
-        <div className="relative">
+        <div className="relative min-h-screen">
             {error && <div className="text-center text-red-500 p-4">{error}</div>}
             {notification && (
                 <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50">
@@ -103,6 +120,22 @@ const TV = () => {
             ) : (
                 <div className="text-center p-4">Loading more models...</div>
             )}
+            {/* Offline log tracker */}
+            <div className="absolute bottom-4 right-4 bg-gray-800 text-white rounded shadow-lg p-4 w-1/4 h-1/4 overflow-y-auto offline-log">
+                <h3 className="text-lg font-bold mb-2">Offline Activity Log</h3>
+                {offlineLog.length > 0 ? (
+                    offlineLog.map((log, index) => (
+                        <div key={index} className="text-sm border-b border-gray-600 py-1">
+                            <span className="font-semibold">{log.user}</span> is offline at checking{' '}
+                            {log.timestamp.toLocaleTimeString()}
+                        </div>
+                    ))
+                ) : (
+                    <p className="text-sm text-gray-400">No offline activity yet.</p>
+                )}
+            </div>
+
+
         </div>
     );
 };
