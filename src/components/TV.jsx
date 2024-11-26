@@ -5,7 +5,7 @@ import tastyModels from '../api/tasty_models.json';
 
 const TV = () => {
     const [onlineModels, setOnlineModels] = useState([]);
-    const [offlineLog, setOfflineLog] = useState([])
+    const [offlineLog, setOfflineLog] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [notification, setNotification] = useState(null); // For pop-up notifications
@@ -13,7 +13,7 @@ const TV = () => {
 
     const showNotification = (message) => {
         setNotification(message);
-        setTimeout(() => setNotification(null), 1000); // Remove notification after 3 seconds
+        setTimeout(() => setNotification(null), 1000); // Remove notification after 1 second
     };
 
     const logOfflineUser = (user) => {
@@ -29,7 +29,6 @@ const TV = () => {
             logContainer.scrollTop = logContainer.scrollHeight;
         }
     }, [offlineLog]);
-    
 
     useEffect(() => {
         let isMounted = true; // To avoid state updates on unmounted components
@@ -48,19 +47,6 @@ const TV = () => {
                                 data: data,
                                 key: `${model}-${Date.now()}`, // Unique key to identify the iframe
                             });
-                            if (isMounted) {
-                                setOnlineModels((prevModels) => {
-                                    // Preserve existing models and only update changed ones
-                                    const updatedModels = newOnlineModels.map((newModel) => {
-                                        const existingModel = prevModels.find(
-                                            (prevModel) => prevModel.name === newModel.name
-                                        );
-                                        return existingModel || newModel;
-                                    });
-
-                                    return updatedModels;
-                                });
-                            }
                         } else if (isMounted) {
                             // Show notification if model is offline
                             logOfflineUser(model);
@@ -70,6 +56,30 @@ const TV = () => {
                         console.error(`Error fetching status for ${model}`);
                     }
                     await delay(2000); // Delay of 2 seconds
+                }
+
+                if (isMounted) {
+                    setOnlineModels((prevModels) => {
+                        const updatedModels = [];
+
+                        // Keep existing models that are still in the new list
+                        prevModels.forEach((prevModel) => {
+                            const match = newOnlineModels.find((newModel) => newModel.name === prevModel.name);
+                            if (match) {
+                                updatedModels.push(prevModel);
+                            }
+                        });
+
+                        // Add new models
+                        newOnlineModels.forEach((newModel) => {
+                            const exists = prevModels.find((prevModel) => prevModel.name === newModel.name);
+                            if (!exists) {
+                                updatedModels.push(newModel);
+                            }
+                        });
+
+                        return updatedModels;
+                    });
                 }
             } catch (err) {
                 if (isMounted) setError(err.message);
@@ -82,13 +92,34 @@ const TV = () => {
 
         const interval = setInterval(() => {
             fetchTastyModels();
-        }, 10 * 60 * 1000); // Refresh every 30 minutes
+        }, 10 * 60 * 1000); // Refresh every 10 minutes
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
     }, []);
+
+    // Dynamically calculate the grid layout based on the number of models
+    const getGridStyles = () => {
+        const count = onlineModels.length;
+        if (count === 1) {
+            return { gridTemplateRows: '1fr', gridTemplateColumns: '1fr', height: '100vh' };
+        }
+        if (count === 2) {
+            return { gridTemplateRows: '1fr 1fr', gridTemplateColumns: '1fr', height: '100vh' };
+        }
+        if (count <= 4) {
+            return { gridTemplateRows: '1fr 1fr', gridTemplateColumns: '1fr 1fr', height: '100vh' };
+        }
+        if (count <= 6) {
+            return { gridTemplateRows: '1fr 1fr 1fr', gridTemplateColumns: '1fr 1fr', height: '100vh' };
+        }
+        if (count <= 8) {
+            return { gridTemplateRows: '1fr 1fr 1fr', gridTemplateColumns: '1fr 1fr 1fr', height: '100vh' };
+        }
+        return { gridTemplateRows: 'repeat(auto-fit, minmax(1fr, 1fr))', gridTemplateColumns: '1fr 1fr 1fr 1fr', height: '100vh' };
+    };
 
     return (
         <div className="relative min-h-screen">
@@ -99,21 +130,21 @@ const TV = () => {
                 </div>
             )}
             {onlineModels && onlineModels.length !== 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
+                <div
+                    className="grid"
+                    style={getGridStyles()} // Dynamically apply grid styles
+                >
                     {onlineModels.map((model) => (
                         <div
                             key={model.key} // Use the unique key
-                            className="rounded flex flex-col items-center"
+                            className="flex items-center justify-center"
                         >
                             <iframe
-                                className='border border-sky-500 rounded'
-                                width={480}
-                                height={360}
+                                className="border border-sky-500 rounded"
+                                width="100%"
+                                height="100%"
                                 src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0`}
                             />
-                            <div>
-                                <h2 className="text-lg font-bold">{model.name}</h2>
-                            </div>
                         </div>
                     ))}
                 </div>
@@ -134,8 +165,6 @@ const TV = () => {
                     <p className="text-sm text-gray-400">No offline activity yet.</p>
                 )}
             </div>
-
-
         </div>
     );
 };

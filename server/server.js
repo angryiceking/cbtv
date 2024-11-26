@@ -20,7 +20,7 @@ app.get('/api/biocontext/:username', async (req, res) => {
     console.error(error.response.statusText);
     return {
         data: {},
-        status: res.statusText
+        status: error.response.statusText
     }
   }
 });
