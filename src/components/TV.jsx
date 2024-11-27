@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { fetchData } from '../api/client';
 import tastyModels from '../api/tasty_models.json';
 
@@ -30,73 +31,42 @@ const TV = () => {
         }
     }, [offlineLog]);
 
+    // WebSocket Client for Receiving Updates
     useEffect(() => {
-        let isMounted = true; // To avoid state updates on unmounted components
+        const socket = io('http://localhost:4000');
 
-        const fetchTastyModels = async () => {
-            setLoading(true);
-            try {
-                const newOnlineModels = [];
-                for (let i = 0; i < tastyModels.length; i++) {
-                    const model = tastyModels[i];
-                    try {
-                        const data = await fetchData(`/biocontext/${model}`);
-                        if (data && (data.room_status === 'public' || data.room_status === 'private' || data.room_status === 'hidden')) {
-                            newOnlineModels.push({
-                                name: model,
-                                data: data,
-                                key: `${model}-${Date.now()}`, // Unique key to identify the iframe
-                            });
-                        } else if (isMounted) {
-                            // Show notification if model is offline
-                            logOfflineUser(model);
-                            showNotification(`${model} is currently offline.`);
-                        }
-                    } catch {
-                        console.error(`Error fetching status for ${model}`);
-                    }
-                    await delay(2000); // Delay of 2 seconds
-                }
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
 
-                if (isMounted) {
-                    setOnlineModels((prevModels) => {
-                        const updatedModels = [];
+        socket.on('disconnect', () => {
+            console.log('Disconnected from WebSocket server');
+        });
 
-                        // Keep existing models that are still in the new list
-                        prevModels.forEach((prevModel) => {
-                            const match = newOnlineModels.find((newModel) => newModel.name === prevModel.name);
-                            if (match) {
-                                updatedModels.push(prevModel);
-                            }
-                        });
-
-                        // Add new models
-                        newOnlineModels.forEach((newModel) => {
-                            const exists = prevModels.find((prevModel) => prevModel.name === newModel.name);
-                            if (!exists) {
-                                updatedModels.push(newModel);
-                            }
-                        });
-
-                        return updatedModels;
-                    });
-                }
-            } catch (err) {
-                if (isMounted) setError(err.message);
-            } finally {
-                if (isMounted) setLoading(false);
+        socket.on('initial_data', (data) => {
+            if (data.models) {
+                setOnlineModels(data.models);
             }
-        };
+        });
 
-        fetchTastyModels();
-
-        const interval = setInterval(() => {
-            fetchTastyModels();
-        }, 10 * 60 * 1000); // Refresh every 10 minutes
+        socket.on('model_update', (newModel) => {
+            console.log('model_update: ', newModel)
+            if (newModel.name) {
+                setOnlineModels((prevModels) => {
+                    // Avoid duplicates
+                    if (!prevModels.some((model) => model.name === newModel.name)) {
+                        return [
+                            ...prevModels,
+                            { name: newModel.name, data: newModel, key: `${newModel.name}-${Date.now()}` },
+                        ];
+                    }
+                    return prevModels;
+                });
+            }
+        });
 
         return () => {
-            isMounted = false;
-            clearInterval(interval);
+            socket.disconnect(); // Clean up the WebSocket connection on component unmount
         };
     }, []);
 
@@ -107,7 +77,7 @@ const TV = () => {
             return { gridTemplateRows: '1fr', gridTemplateColumns: '1fr', height: '100vh' };
         }
         if (count === 2) {
-            return { gridTemplateRows: '1fr 1fr', gridTemplateColumns: '1fr', height: '100vh' };
+            return { gridTemplateRows: '1fr', gridTemplateColumns: '1fr 1fr', height: '100vh' }; // Split vertically
         }
         if (count <= 4) {
             return { gridTemplateRows: '1fr 1fr', gridTemplateColumns: '1fr 1fr', height: '100vh' };
@@ -143,7 +113,7 @@ const TV = () => {
                                 className="border border-sky-500 rounded"
                                 width="100%"
                                 height="100%"
-                                src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0`}
+                                src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0&quality=240`}
                             />
                         </div>
                     ))}
