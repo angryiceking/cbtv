@@ -1,35 +1,36 @@
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { fetchData } from '../api/client';
-import tastyModels from '../api/tasty_models.json';
+import AFK from './AFK';
 
 const TV = () => {
     const [onlineModels, setOnlineModels] = useState([]);
-    const [offlineLog, setOfflineLog] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [activityLog, setActivityLog] = useState([]);
     const [error, setError] = useState(null);
     const [notification, setNotification] = useState(null); // For pop-up notifications
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const [isMinimized, setIsMinimized] = useState(false); // Minimize state
+    const logContainerRef = useRef(null); // Ref for draggable container
+    const [containerSize, setContainerSize] = useState({ width: 300, height: 200 }); // Initial size
+
 
     const showNotification = (message) => {
         setNotification(message);
-        setTimeout(() => setNotification(null), 1000); // Remove notification after 1 second
+        setTimeout(() => setNotification(null), 5000); // Remove notification after 1 second
     };
 
-    const logOfflineUser = (user) => {
-        setOfflineLog((prevLog) => {
-            const newLog = [...prevLog, { user, timestamp: new Date() }];
-            return newLog.slice(-10); // Keep the last 10 logs
+    const addToActivityLog = (user, status) => {
+        setActivityLog((prevLog) => {
+            const newLog = [...prevLog, { user, status, timestamp: new Date() }];
+            return newLog.slice(-20); // Keep the last 20 logs
         });
     };
 
     useEffect(() => {
-        const logContainer = document.querySelector('.offline-log');
+        const logContainer = document.querySelector('.activity-log');
         if (logContainer) {
             logContainer.scrollTop = logContainer.scrollHeight;
         }
-    }, [offlineLog]);
+    }, [activityLog]);
 
     // WebSocket Client for Receiving Updates
     useEffect(() => {
@@ -53,8 +54,9 @@ const TV = () => {
             console.log('model_update: ', newModel)
             if (newModel.name) {
                 setOnlineModels((prevModels) => {
-                    // Avoid duplicates
                     if (!prevModels.some((model) => model.name === newModel.name)) {
+                        addToActivityLog(newModel.name, 'online');
+                        showNotification(`${newModel.name} is now online!`)
                         return [
                             ...prevModels,
                             { name: newModel.name, data: newModel, key: `${newModel.name}-${Date.now()}` },
@@ -69,11 +71,71 @@ const TV = () => {
             console.log('model_remove: ', removedModel);
             if (removedModel.name) {
                 setOnlineModels((prevModels) => prevModels.filter((model) => model.name !== removedModel.name));
+                addToActivityLog(removedModel.name, 'offline');
             }
         });
 
         return () => {
             socket.disconnect(); // Clean up the WebSocket connection on component unmount
+        };
+    }, []);
+
+    useEffect(() => {
+        const logContainer = logContainerRef.current;
+        if (!logContainer) return;
+
+        let isDragging = false;
+        let isResizing = false;
+        let startX, startY, startWidth, startHeight;
+
+        const handleMouseMove = (e) => {
+            if (isDragging) {
+                logContainer.style.left = `${e.clientX - startX}px`;
+                logContainer.style.top = `${e.clientY - startY}px`;
+            } else if (isResizing) {
+                const newWidth = startWidth + e.clientX - startX;
+                const newHeight = startHeight + e.clientY - startY;
+                setContainerSize({
+                    width: Math.max(200, newWidth),
+                    height: Math.max(150, newHeight),
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            isDragging = false;
+            isResizing = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        const handleDragStart = (e) => {
+            isDragging = true;
+            startX = e.clientX - logContainer.offsetLeft;
+            startY = e.clientY - logContainer.offsetTop;
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        };
+
+        const handleResizeStart = (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = logContainer.offsetWidth;
+            startHeight = logContainer.offsetHeight;
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        };
+
+        const dragHandle = logContainer.querySelector('.drag-handle');
+        const resizeHandle = logContainer.querySelector('.resize-handle');
+
+        dragHandle.addEventListener('mousedown', handleDragStart);
+        resizeHandle.addEventListener('mousedown', handleResizeStart);
+
+        return () => {
+            dragHandle.removeEventListener('mousedown', handleDragStart);
+            resizeHandle.removeEventListener('mousedown', handleResizeStart);
         };
     }, []);
 
@@ -113,8 +175,8 @@ const TV = () => {
                 >
                     {onlineModels.map((model) => (
                         <div
-                            key={model.key} // Use the unique key
-                            className="flex items-center justify-center"
+                            key={model.name} // Use the unique key
+                            className="flex items-center justify-center relative"
                         >
                             <iframe
                                 className="border border-sky-500 rounded"
@@ -122,24 +184,60 @@ const TV = () => {
                                 height="100%"
                                 src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0&quality=240`}
                             />
+                            <div className="absolute bottom-0 left-2 bg-white text-black p-4">
+                                <h4 className='text-3xl'>{model.name}</h4>
+                                <h4 className='text-2xl'>Total Viewers: 19298123</h4>
+                            </div>
                         </div>
                     ))}
                 </div>
             ) : (
-                <div className="text-center p-4">TV Mode is running in background. Online models will appear here.</div>
+                // <div className="text-center p-4">TV Mode is running in background. Online models will appear here.</div>
+                <AFK/>
             )}
             {/* Offline log tracker */}
-            <div className="absolute bottom-4 right-4 bg-gray-800 text-white rounded shadow-lg p-4 w-1/4 h-1/4 overflow-y-auto offline-log">
-                <h3 className="text-lg font-bold mb-2">Offline Activity Log</h3>
-                {offlineLog.length > 0 ? (
-                    offlineLog.map((log, index) => (
-                        <div key={index} className="text-sm border-b border-gray-600 py-1">
-                            <span className="font-semibold">{log.user}</span> is offline at checking{' '}
-                            {log.timestamp.toLocaleTimeString()}
+            <div
+                ref={logContainerRef}
+                className="activity-log absolute bg-gray-800 text-white rounded shadow-lg"
+                style={{
+                    top: '4px',
+                    right: '4px',
+                    width: `${containerSize.width}px`,
+                    height: isMinimized ? '30px' : `${containerSize.height}px`,
+                }}
+            >
+                <div className="drag-handle bg-gray-700 text-center text-white cursor-move p-1 rounded-t">
+                    <span>Activity Log</span>
+                    <button
+                        className="float-right bg-red-500 px-2 py-1 text-xs rounded"
+                        onClick={() => setIsMinimized(!isMinimized)}
+                    >
+                        {isMinimized ? '+' : '-'}
+                    </button>
+                </div>
+                {!isMinimized && (
+                    <>
+                        <div className="overflow-y-auto" style={{ height: 'calc(100% - 30px)' }}>
+                            {activityLog.length > 0 ? (
+                                activityLog.map((log, index) => (
+                                    <div key={index} className="text-sm border-b border-gray-600 py-1">
+                                        <span
+                                            className={`font-semibold ${
+                                                log.status === 'online' ? 'text-green-400' : 'text-red-400'
+                                            }`}
+                                        >
+                                            {log.user}
+                                        </span>{' '}
+                                        {log.status === 'online' ? 'came online' : 'went offline'} at{' '}
+                                        {log.timestamp.toLocaleTimeString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-gray-400 pt-5 pl-5">No activity yet.</p>
+                            )}
                         </div>
-                    ))
-                ) : (
-                    <p className="text-sm text-gray-400">No offline activity yet.</p>
+                        <div className="resize-handle w-4 h-4 bg-gray-500 cursor-se-resize absolute bottom-0 right-0"></div>
+                    </>
                 )}
             </div>
         </div>
