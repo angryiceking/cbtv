@@ -6,6 +6,7 @@ import AFK from './AFK';
 const TV = () => {
     const [onlineModels, setOnlineModels] = useState([]);
     const [activityLog, setActivityLog] = useState([]);
+    const [viewerCounts, setViewerCounts] = useState({})
     const [error, setError] = useState(null);
     const [notification, setNotification] = useState(null); // For pop-up notifications
     const [isMinimized, setIsMinimized] = useState(false); // Minimize state
@@ -24,6 +25,36 @@ const TV = () => {
             return newLog.slice(-20); // Keep the last 20 logs
         });
     };
+
+    const fetchViewerCount = async (modelName) => {
+        try {
+            const response = await fetch(`http://localhost:4000/api/viewer_count?model=${modelName}`);
+            if (response.ok) {
+                const data = await response.json();
+                setViewerCounts((prevCounts) => ({
+                    ...prevCounts,
+                    [modelName]: {
+                        total: data.viewer_count
+                    },
+                }));
+            } else {
+                console.error(`Failed to fetch viewer count for ${modelName}: ${response.statusText}`);
+            }
+
+        } catch (error) {
+            console.error(`Error fetching viewer count for ${modelName}:`, error);
+        }
+    };
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            Object.keys(onlineModels).forEach((modelName) => {
+                fetchViewerCount(modelName); // Fetch viewer count for each online model
+            });
+        }, 5 * 60 * 1000); // Every 5 minutes
+
+        return () => clearInterval(interval); // Cleanup on unmount
+    }, [onlineModels]); // Re-run when online models change    
 
     useEffect(() => {
         const logContainer = document.querySelector('.activity-log');
@@ -51,34 +82,44 @@ const TV = () => {
         });
 
         socket.on('model_update', (newModel) => {
-            console.log('model_update: ', newModel)
+            console.log('model_update: ', newModel);
             if (newModel.name) {
                 setOnlineModels((prevModels) => {
-                    if (!prevModels.some((model) => model.name === newModel.name)) {
-                        addToActivityLog(newModel.name, 'online');
-                        showNotification(`${newModel.name} is now online!`)
-                        return [
-                            ...prevModels,
-                            { name: newModel.name, data: newModel, key: `${newModel.name}-${Date.now()}` },
-                        ];
-                    }
-                    return prevModels;
+                    const updatedModels = { ...prevModels };
+                    updatedModels[newModel.name] = newModel; // Add or update the model in the dictionary
+                    addToActivityLog(newModel.name, 'online');
+                    showNotification(`${newModel.name} is now online!`);
+                    fetchViewerCount(newModel.name); // Fetch viewer count immediately
+                    return updatedModels;
                 });
             }
         });
 
+
         socket.on('model_remove', (removedModel) => {
             console.log('model_remove: ', removedModel);
             if (removedModel.name) {
-                setOnlineModels((prevModels) => prevModels.filter((model) => model.name !== removedModel.name));
-                addToActivityLog(removedModel.name, 'offline');
+                setOnlineModels((prevModels) => {
+                    const updatedModels = { ...prevModels };
+                    delete updatedModels[removedModel.name]; // Remove the model from the dictionary
+                    addToActivityLog(removedModel.name, 'offline');
+                    return updatedModels;
+                });
             }
+        });
+
+
+        socket.on('viewer_update', (data) => {
+            setViewerCounts((prevCounts) => ({
+                ...prevCounts,
+                [data.name]: data.viewer_count,
+            }));
         });
 
         return () => {
             socket.disconnect(); // Clean up the WebSocket connection on component unmount
         };
-    }, []);
+    }, []); 
 
     useEffect(() => {
         const logContainer = logContainerRef.current;
@@ -141,7 +182,7 @@ const TV = () => {
 
     // Dynamically calculate the grid layout based on the number of models
     const getGridStyles = () => {
-        const count = onlineModels.length;
+        const count = Object.keys(onlineModels).length; // Get the number of online models
         if (count === 1) {
             return { gridTemplateRows: '1fr', gridTemplateColumns: '1fr', height: '100vh' };
         }
@@ -157,8 +198,17 @@ const TV = () => {
         if (count <= 8) {
             return { gridTemplateRows: '1fr 1fr 1fr', gridTemplateColumns: '1fr 1fr 1fr', height: '100vh' };
         }
-        return { gridTemplateRows: 'repeat(auto-fit, minmax(1fr, 1fr))', gridTemplateColumns: '1fr 1fr 1fr 1fr', height: '100vh' };
+        return {
+            gridTemplateRows: `repeat(${Math.ceil(count / 4)}, 1fr)`,
+            gridTemplateColumns: '1fr 1fr 1fr 1fr',
+            height: '100vh',
+        };
     };
+
+    useEffect(() => {
+        console.log(viewerCounts)
+    }, [viewerCounts])
+
 
     return (
         <div className="relative min-h-screen">
@@ -168,12 +218,12 @@ const TV = () => {
                     {notification}
                 </div>
             )}
-            {onlineModels && onlineModels.length !== 0 ? (
+            {onlineModels && Object.keys(onlineModels).length !== 0 ? (
                 <div
                     className="grid"
                     style={getGridStyles()} // Dynamically apply grid styles
                 >
-                    {onlineModels.map((model) => (
+                    {Object.values(onlineModels).map((model) => (
                         <div
                             key={model.name} // Use the unique key
                             className="flex items-center justify-center relative"
@@ -185,17 +235,18 @@ const TV = () => {
                                 src={`https://chaturbate.com/fullvideo/?b=${model.name}&campaign=QdzcL&signup_notice=1&tour=Limj&disable_sound=0&quality=240`}
                             />
                             <div className="absolute bottom-0 left-2 bg-white text-black p-4">
-                                <h4 className='text-3xl'>{model.name}</h4>
-                                <h4 className='text-2xl'>Total Viewers: 19298123</h4>
+                                <h4 className="text-3xl">{model.name}</h4>
+                                <h4 className="text-2xl">
+                                    Total Viewers: {viewerCounts[model.name]?.total || 'Loading...'}
+                                </h4>
                             </div>
                         </div>
                     ))}
                 </div>
             ) : (
-                // <div className="text-center p-4">TV Mode is running in background. Online models will appear here.</div>
-                <AFK/>
+                <AFK />
             )}
-            {/* Offline log tracker */}
+
             <div
                 ref={logContainerRef}
                 className="activity-log absolute bg-gray-800 text-white rounded shadow-lg"
@@ -222,9 +273,8 @@ const TV = () => {
                                 activityLog.map((log, index) => (
                                     <div key={index} className="text-sm border-b border-gray-600 py-1">
                                         <span
-                                            className={`font-semibold ${
-                                                log.status === 'online' ? 'text-green-400' : 'text-red-400'
-                                            }`}
+                                            className={`font-semibold ${log.status === 'online' ? 'text-green-400' : 'text-red-400'
+                                                }`}
                                         >
                                             {log.user}
                                         </span>{' '}
