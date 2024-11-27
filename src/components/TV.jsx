@@ -65,6 +65,13 @@ const TV = () => {
             }
         });
 
+        socket.on('model_remove', (removedModel) => {
+            console.log('model_remove: ', removedModel);
+            if (removedModel.name) {
+                setOnlineModels((prevModels) => prevModels.filter((model) => model.name !== removedModel.name));
+            }
+        });
+
         return () => {
             socket.disconnect(); // Clean up the WebSocket connection on component unmount
         };
@@ -119,7 +126,7 @@ const TV = () => {
                     ))}
                 </div>
             ) : (
-                <div className="text-center p-4">Loading more models...</div>
+                <div className="text-center p-4">TV Mode is running in background. Online models will appear here.</div>
             )}
             {/* Offline log tracker */}
             <div className="absolute bottom-4 right-4 bg-gray-800 text-white rounded shadow-lg p-4 w-1/4 h-1/4 overflow-y-auto offline-log">

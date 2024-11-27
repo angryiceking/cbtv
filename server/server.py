@@ -11,10 +11,9 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 online_models = []
 
 @app.route('/api/webhook', methods=['POST'])
-@app.route('/api/webhook', methods=['POST'])
 def webhook():
     """
-    Webhook to receive model names from the script app.
+    Webhook to receive model updates (online/offline).
     """
     global online_models
     data = request.get_json()
@@ -22,22 +21,25 @@ def webhook():
         return jsonify({"error": "Invalid data"}), 400
 
     model_name = data['name']
-    print(f"Webhook received: {model_name}")
+    room_status = data.get('room_status')
 
-    # Fetch model data using the /api/biocontext/<username> route
-    response = get_model_data(model_name)
-    if response.status_code == 200:
-        model_data = response.json()
-        model_data['name'] = model_name
-        online_models.append(model_data)
-
-        print(f"Emitting model update for: {model_data}")
-        # Notify all connected clients about the new model
-        socketio.emit('model_update', model_data)
-
-        return jsonify({"message": f"Model {model_name} added.", "data": model_data}), 200
+    if room_status == 'offline':
+        print(f"Model {model_name} went offline")
+        # Notify React clients to remove the model
+        socketio.emit('model_remove', {"name": model_name})
+        # Remove the model from the server's online list
+        online_models = [model for model in online_models if model.get('name') != model_name]
     else:
-        return jsonify({"error": f"Failed to fetch data for {model_name}"}), response.status_code
+        # Handle online models (existing logic)
+        response = get_model_data(model_name)
+        if response.status_code == 200:
+            model_data = response.json()
+            model_data['name'] = model_name
+            online_models.append(model_data)
+            socketio.emit('model_update', model_data)
+
+    return jsonify({"message": f"Processed model {model_name} with status {room_status}"}), 200
+
 
 
 @app.route('/api/biocontext/<string:username>', methods=['GET'])
