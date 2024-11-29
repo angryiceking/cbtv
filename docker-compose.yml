@@ -1,0 +1,27 @@
+version: "3.8"
+services:
+  server:
+    build:
+      context: ./server
+    ports:
+      - "4000:4000" # Expose the server to external APIs
+    networks:
+      - app-network
+    volumes:
+      - ./server:/app # Bind mount to sync local server code
+    stdin_open: true
+    tty: true
+
+  app:
+    build:
+      context: ./app
+    ports:
+      - "3000:3000" # Expose the React UI
+    networks:
+      - app-network
+    depends_on:
+      - server # Ensure the server starts before the UI
+
+networks:
+  app-network:
+    driver: bridge
